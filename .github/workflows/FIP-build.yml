@@ -792,3 +792,4 @@ jobs:
         name: ${{ env.FILE_DATE }}-${{ env.UPLOAD_TAG_NAME }}
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
+# enable-actions: trigger workflow registration

@@ -1,0 +1,110 @@
+# 专用：只编 BPI-R3 mini eMMC 的 FIT(U-Boot mod) 变体
+# 通过命令行传 BOARD= 绕过 board-configs 的变体判定问题
+name: R3mini FIT FIP
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: 'Board (no soc prefix)'
+        default: 'bpi_r3mini-emmc'
+        type: string
+      version:
+        description: 'ATF/U-Boot version'
+        default: 'SP1'
+        type: choice
+        options: [SP1, SP2, '2025']
+      variant:
+        description: 'Variant (ubootmod = configs-fit)'
+        default: 'ubootmod'
+        type: choice
+        options: [ubootmod, default, nonmbm, openwrt]
+      copy_bl2:
+        description: 'Copy BL2 (1=yes)'
+        default: '1'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install depends
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          sudo apt-get -qq update
+          sudo apt-get -qq install $(cat depends/ubuntu-22.04)
+          sudo apt-get -qq install rename tar
+
+      - name: Write .config
+        run: |
+          set -euo pipefail
+          cat > .config <<'EOF'
+          CONFIG_BUILD_FIP=y
+          CONFIG_BUILD_ATF=n
+          CONFIG_BUILD_GPT=n
+          CONFIG_VERSION_SP1=y
+          CONFIG_VERSION_SP2=n
+          CONFIG_VERSION_2025=n
+          CONFIG_VARIANT_UBOOTMOD=y
+          CONFIG_VARIANT_DEFAULT=n
+          CONFIG_VARIANT_UBI=n
+          CONFIG_VARIANT_NONMBM=n
+          CONFIG_VARIANT_OPENWRT=n
+          CONFIG_FSTHEME_BOOTSTRAP=y
+          CONFIG_FSTHEME_GL=n
+          CONFIG_FSTHEME_MTK=n
+          CONFIG_COPY_BL2=y
+          CONFIG_BUILD_LOG=y
+          CONFIG_SILENT=n
+          EOF
+          # 若选了别的版本，覆盖对应开关
+          sed -i "s/^CONFIG_VERSION_SP1=.*/CONFIG_VERSION_SP1=n/" .config
+          sed -i "s/^CONFIG_VERSION_SP2=.*/CONFIG_VERSION_SP2=n/" .config
+          sed -i "s/^CONFIG_VERSION_2025=.*/CONFIG_VERSION_2025=n/" .config
+          case "${{ inputs.version }}" in
+            SP1)  sed -i "s/^CONFIG_VERSION_SP1=.*/CONFIG_VERSION_SP1=y/" .config ;;
+            SP2)  sed -i "s/^CONFIG_VERSION_SP2=.*/CONFIG_VERSION_SP2=y/" .config ;;
+            2025) sed -i "s/^CONFIG_VERSION_2025=.*/CONFIG_VERSION_2025=y/" .config ;;
+          esac
+          echo "=== .config ==="
+          cat .config
+
+      - name: Build
+        run: |
+          set -o pipefail
+          make BOARD="${{ inputs.board }}" \
+               VERSION="${{ inputs.version }}" \
+               VARIANT="${{ inputs.variant }}" \
+               FSTHEME=bootstrap \
+               MULTI_LAYOUT=0 \
+               FIXED_MTDPARTS=1 \
+               COPY_BL2="${{ inputs.copy_bl2 }}" \
+               BUILD_LOG=y \
+               build 2>&1 | tee /tmp/build.log
+
+      - name: List output
+        if: always()
+        run: |
+          echo "=== log tail ==="
+          tail -40 /tmp/build.log || true
+          echo "=== output ==="
+          ls -l output/ 2>/dev/null || echo "(no output dir)"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r3mini-fit-${{ inputs.version }}
+          path: |
+            output/*.bin
+            output/*.img
+            /tmp/build.log
+          if-no-files-found: warn

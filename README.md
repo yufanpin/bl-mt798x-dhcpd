@@ -4,6 +4,9 @@ A modified version of hanwckf's U-Boot for MT798x by Yuzhii, with support for DH
 
 Supports GitHub Actions for automatic builds, and can generate both normal and overclocked BL2.
 
+> [!TIP]
+> This fork adds verified board support and a dedicated workflow for the **Banana Pi BPI-R3 mini (eMMC, FIT/.itb)** — see [BPI-R3 mini quick start](#bpi-r3-mini-emmc-fit-quick-start).
+
 > [!CAUTION]
 > **Warning: Flashing custom bootloaders can brick your device. Proceed with caution and at your own risk.**
 
@@ -305,6 +308,60 @@ How to flash:
 6. Use failsafe WEB UI Initramfs to boot the OpenWrt/ImmortalWrt ubootmod Initramfs image.
 
 7. If the device can boot into OpenWrt/ImmortalWrt successfully, then you can try upgrade in firmware upgrade page with the OpenWrt/ImmortalWrt ubootmod firmware again.
+
+---
+
+## BPI-R3 mini (eMMC) FIT quick start
+
+Verified build for the Banana Pi BPI-R3 mini (MT7986, eMMC). All board files ship in this tree:
+
+| Purpose | File |
+| --- | --- |
+| BL2 (preloader) | `atf-20240117-bacca82a8/configs/mt7986_bpi_r3mini-emmc_defconfig` |
+| U-Boot (normal) | `uboot-mtk-20250711/configs/mt7986_bpi_r3mini-emmc_defconfig` |
+| U-Boot (FIT) | `uboot-mtk-20250711/configs-fit/mt7986_bpi_r3mini-emmc_defconfig` |
+| Board DTS | `uboot-mtk-20250711/arch/arm/dts/mt7986a-bpi_r3mini-emmc.dts` |
+| GPT layout | `mt798x_gpt/mt7986-bpi_r3mini-emmc_rfb.json` |
+
+> [!IMPORTANT]
+> Use `VERSION=SP1` for this board. `atf-20250711` and `atf-20260123` contain no `mt7986_bpi_r3mini-emmc` ATF config, so building with the default `VERSION=2025` fails at the BL2 stage.
+>
+> **中文**：BPI-R3 mini 必须用 `VERSION=SP1`，用默认的 2025 会在 BL2 阶段编译失败。
+
+### Build
+
+Local build:
+
+```bash
+make BOARD=bpi_r3mini-emmc VERSION=SP1 VARIANT=ubootmod
+```
+
+`VARIANT=ubootmod` is what selects the FIT build: `build.sh` switches to `configs-fit/` and appends `-fit` to the output names.
+
+Or use Actions: run the **R3mini FIT FIP** workflow (`.github/workflows/r3mini-fit.yml`). It defaults to `bpi_r3mini-emmc` / `SP1` / `ubootmod`, builds the FIP plus the matching BL2, and uploads them as an artifact.
+
+Output files look like this (the `md5-*` suffix changes on every build):
+
+```
+output/bl2-mt7986_bpi_r3mini-emmc_SP1-fit_md5-<md5>.img
+output/fip-mt7986_bpi_r3mini-emmc_SP1-Yuzhii-dhcpd-fit_md5-<md5>.bin
+```
+
+### Flash
+
+1. Connect a LAN port to your PC, hold **reset** while powering on, then release when the failsafe Web UI comes up.
+2. DHCP is built in — your PC gets an address automatically. Open `http://192.168.1.1` (or `http://failsafe.lan`).
+3. **Back up all partitions** first (Backup download in the Web UI). Do not skip this on eMMC.
+4. **Update BL2** → flash `bl2-mt7986_bpi_r3mini-emmc_SP1-fit_*.img`.
+5. **Update U-Boot** → flash `fip-mt7986_bpi_r3mini-emmc_SP1-*-fit_*.bin`.
+6. Wait for the reboot, then re-enter failsafe.
+7. **Firmware upgrade** → `openwrt-mediatek-filogic-bananapi_bpi-r3-mini-squashfs-sysupgrade.itb`.
+
+Notes for this board:
+
+- eMMC has no UBI partition, so the `mtd erase ubi` step does not apply here.
+- This U-Boot boots **mainline OpenWrt / ImmortalWrt ubootmod (FIT) images only** (24.10 or newer). MTK-SDK based vendor firmware will not boot.
+- If the board stops booting, recover over UART with [MTK UARTBOOT](https://github.com/981213/mtk_uartboot/releases) or [MTK-LAUNCHPAD](https://github.com/Yuzhii0718/mtk-launchpad) before touching the flash again.
 
 ---
 
